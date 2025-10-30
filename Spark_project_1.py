@@ -134,7 +134,7 @@ def main():
 main()
 
 #Problems
-#1 Throws error when file not available for the month (Try-except not handling the issue)
-#2 create table if exists doesnt work for oracle 19c. Need a workaround
-#3 create table query is not working using cx_oracle
-#4 ojdbc11.jar file cannot be located from path variable
+#1 Throws error when file not available for the month (Try-except not handling the issue) - not solved. Just dont run without file
+#2 create table if exists doesnt work for oracle 19c. Need a workaround - created table manually 
+#3 create table query is not working using cx_oracle  - created table manually 
+#4 ojdbc11.jar file cannot be located from path variable - added the variable in the code
