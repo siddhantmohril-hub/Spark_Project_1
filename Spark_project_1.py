@@ -34,7 +34,6 @@ def read_tgt_data(cur):
         #print(df1)
         return df1
     except Exception as e:
-        print("Fuuuuuuuuuuuuuuuuuuuuuuuuuuuuccccccccccccccccccccck")
         print(e)
         return None
 # checking the update records with a type-1 logic
@@ -104,6 +103,7 @@ def dataload_tgt(cur,df):
                 CREATE_TS TIMESTAMP)'
         cur.execute(q)
         cur.execute('COMMIT')
+        print("created Table yayyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy!!!!!!!!!!!!!")
 #truncating the existing data
     #cur.execute('TRUNCATE TABLE TAXI_TRIPDATA;')
 # load the target data from dataframe to database
@@ -120,6 +120,7 @@ def dataload_tgt(cur,df):
     .option("user", oracle_properties["user"]) \
     .option("password", oracle_properties["password"]) \
     .mode("overwrite").save()
+    return
 def main():
     #read data from input file into dataframe
     try:
@@ -148,12 +149,3 @@ def main():
     dataload_tgt(cursor,final_df)
     return
 main()
-
-#Problems
-#1 Throws error when file not available for the month (Try-except not handling the issue) -solved.
-# Solved: adjusted the configuration to logging level as "Error" by adding .config("spark.sql.streaming.log.level","Error")
-# and added config.("spark.driver.extraJavaOptions","-Dlog4j.rootCategory=Error") for spark driver warnings
-#2 create table if not exists doesnt work for oracle 19c. Need a workaround - created table manually 
-# Solved: added a logic to check all_tables for present of the given table
-#3 create table query is not working using cx_oracle  - created table manually 
-#4 ojdbc11.jar file cannot be located from path variable - added the variable in the code
