@@ -3,12 +3,17 @@ from pyspark.sql.functions import avg,concat,col,hash,isnull,current_timestamp
 from datetime import datetime
 import cx_Oracle
 import os
-#os.environ['PYSPARK_SUBMIT_ARGS'] = '--jars "F:\\JAVA\\JDBC_connection\\jars\\ojdbc11.jar" pyspark-shell'
+os.environ['PYSPARK_SUBMIT_ARGS'] = '--jars "F:\\JAVA\\JDBC_connection\\jars\\ojdbc11.jar" pyspark-shell'
 # initialize Spark Session
 spark = SparkSession.builder.appName("Spark_Project")\
         .config("spark.sql.streaming.fileStream.log.level", "ERROR")\
-    .config("spark.sql.streaming.log.level", "ERROR")\
+        .config("spark.sql.streaming.log.level", "ERROR")\
+        .config("spark.log.level", "ERROR")\
+        .config("spark.driver.extraJavaOptions", "-Dlog4j.rootCategory=ERROR")\
     .getOrCreate()
+
+# Set log level for Java FileNotFoundException
+spark.sparkContext.setLogLevel("ERROR")
 # adding a hash column
 def add_hash(s_df):
     tdf=s_df.withColumn("key_hash",hash(concat(col("VendorID"),col("tpep_pickup_datetime"),col("tpep_dropoff_datetime"),\
@@ -21,15 +26,21 @@ def add_timestamp(s_df):
 # reading the Data already in output table
 def read_tgt_data(cur):
     try:
-        cur.execute("SELECT * FROM TAXI_TRIPDATA;")
-        df1=spark.DataFrame(cur.fetchall())
+        cur.execute("SELECT * FROM TAXI_TRIPDATA")
+        col=[i[0] for i in cur.description]
+        df1=spark.createDataFrame(cur.fetchall(),col)
+        df1.show(2)
+        #df1=cur.fetchall()
+        #print(df1)
         return df1
     except Exception as e:
+        print("Fuuuuuuuuuuuuuuuuuuuuuuuuuuuuccccccccccccccccccccck")
+        print(e)
         return None
 # checking the update records with a type-1 logic
 def type_1_upd(udf,tdf):
     cdf=udf.join(tdf,udf.key_hash==tdf.key_hash,"full_outer")
-    cdf.select(udf.VendorID).show(5)
+    #cdf.select(udf.VendorID).show(5)
     final_df=cdf.select(udf.VendorID,udf.tpep_pickup_datetime,udf.tpep_dropoff_datetime,udf.passenger_count,udf.trip_distance,\
                     udf.RatecodeID,udf.store_and_fwd_flag,udf.PULocationID,udf.DOLocationID,udf.payment_type,udf.fare_amount,udf.extra,\
                         udf.mta_tax,udf.tip_amount,udf.tolls_amount,udf.improvement_surcharge,udf.total_amount,udf.congestion_surcharge,\
@@ -64,9 +75,12 @@ def dbconnect():
 # Function to load data to target
 def dataload_tgt(cur,df):
 # Query to create table for the first time load
-    q='CREATE TABLE \
-        TAXI_TRIPDATA (\
-            VendorID NUMBER(10),\
+    cur.execute("SELECT ts.table_name FROM all_tables ts WHERE ts.tablespace_name = 'EXAMPLE' ORDER BY ts.table_name")
+    p=cur.fetchall()
+    if p is None:
+        q='CREATE TABLE \
+            TAXI_TRIPDATA (\
+                VendorID NUMBER(10),\
                 tpep_pickup_datetime TIMESTAMP,\
                 tpep_dropoff_datetime TIMESTAMP,\
                 passenger_count NUMBER(10),\
@@ -87,11 +101,11 @@ def dataload_tgt(cur,df):
                 Airport_fee          NUMBER(10,2),\
                 cbd_congestion_fee   NUMBER(10,2),\
                 key_hash VARCHAR2(256),\
-                CREATE_TS TIMESTAMP);'
-    cur.execute(q)
+                CREATE_TS TIMESTAMP)'
+        cur.execute(q)
+        cur.execute('COMMIT')
 #truncating the existing data
     #cur.execute('TRUNCATE TABLE TAXI_TRIPDATA;')
-    cur.execute('COMMIT')
 # load the target data from dataframe to database
     oracle_properties={
         "driver":"oracle.jdbc.driver.OracleDriver",
@@ -112,29 +126,34 @@ def main():
         dt=datetime.now()
         year=dt.strftime("%Y")
         month=dt.strftime("%m")
-        tst="F:\\Spark\\Project_1\\Spark_dataset\\yellow_tripdata_{}-{}.parquet".format(year,month)
+        tst="F:\\Spark\\Project_1\\Spark_dataset\\yellow_tripdata_{}-{}.parquet".format("2025","01")
         taxi_df=spark.read.parquet(tst)
-        #print(taxi_df.count()) #3475226
-        temp_df=taxi_df.limit(50)
+        #print(taxi_df.count()) #3475  
+        temp_df=taxi_df.sample(0.0001)
+        print(temp_df.count()) #3475226
     except Exception as e:
-        if ('FileNotFoundException' in str(e)):
-            print('No Data Available for the month')
+        print('No Data Available for the month')
+        return
     cursor=dbconnect()
     temp_df=add_hash(temp_df)
     temp_df=add_timestamp(temp_df)
     #print(type(cursor))
     tgt_df=read_tgt_data(cursor)
+    #print(tgt_df.count()) 
     if tgt_df is not None:
-        #tgt_df.show(2)
         final_df=type_1_upd(tgt_df,temp_df)
     else:
         final_df=temp_df
+    final_df=add_timestamp(final_df)
     dataload_tgt(cursor,final_df)
     return
 main()
 
 #Problems
-#1 Throws error when file not available for the month (Try-except not handling the issue) - not solved. Just dont run without file
-#2 create table if exists doesnt work for oracle 19c. Need a workaround - created table manually 
+#1 Throws error when file not available for the month (Try-except not handling the issue) -solved.
+# Solved: adjusted the configuration to logging level as "Error" by adding .config("spark.sql.streaming.log.level","Error")
+# and added config.("spark.driver.extraJavaOptions","-Dlog4j.rootCategory=Error") for spark driver warnings
+#2 create table if not exists doesnt work for oracle 19c. Need a workaround - created table manually 
+# Solved: added a logic to check all_tables for present of the given table
 #3 create table query is not working using cx_oracle  - created table manually 
 #4 ojdbc11.jar file cannot be located from path variable - added the variable in the code
